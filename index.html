@@ -169,14 +169,17 @@ window.checkVerified = async function() {
   try {
     await reload(user);
     if (user.emailVerified) {
-      showToast('✅ Email verified! Welcome to Spendly!');
+      showToast('✅ Verified! Redirecting...');
+      await signOut(auth);
+      document.getElementById('verifyScreen').style.display = 'none';
+      document.getElementById('authScreen').style.display = 'flex';
+      showAuthSuccess('Email verified! ✅ Please sign in now.');
     } else {
       btn.textContent = "I've Verified My Email";
-      showToast('⚠️ Not verified yet — check your inbox');
+      showToast('⚠️ Not verified yet — check your inbox and spam!');
     }
   } catch { btn.textContent = "I've Verified My Email"; }
 };
-
 /* ── SIGN OUT FROM VERIFY SCREEN ── */
 window.signOutFromVerify = async function() {
   await signOut(auth);
