@@ -170,16 +170,14 @@ window.checkVerified = async function() {
   try {
     await reload(user);
     if (user.emailVerified) {
-      showToast('✅ Verified! Redirecting...');
-      await signOut(auth);
-      document.getElementById('verifyScreen').style.display = 'none';
-      document.getElementById('authScreen').style.display = 'flex';
-      showAuthSuccess('Email verified! ✅ Please sign in now.');
+      window.location.reload();
     } else {
       btn.textContent = "I've Verified My Email";
-      showToast('⚠️ Not verified yet — check your inbox and spam!');
+      showToast('⚠️ Not verified yet — check inbox!');
     }
-  } catch { btn.textContent = "I've Verified My Email"; }
+  } catch(e) {
+    btn.textContent = "I've Verified My Email";
+  }
 };
 /* ── SIGN OUT FROM VERIFY SCREEN ── */
 window.signOutFromVerify = async function() {
