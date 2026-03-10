@@ -29,7 +29,8 @@ let unsubscribeSnapshot = null;
 /* ── AUTH STATE ── */
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    // Not verified yet
+    // Reload to get fresh verification status
+    await reload(user);
     if (!user.emailVerified) {
       currentUser = null;
       document.getElementById('authScreen').style.display = 'none';
