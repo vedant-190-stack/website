@@ -11,13 +11,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, sendEmailVerification, reload } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+// ═══════════════════════════════════════════════════════════
+// FIREBASE CONFIG - MOVE TO ENVIRONMENT VARIABLES IN PRODUCTION
+// ═══════════════════════════════════════════════════════════
+// For production: Use build-time environment variables or a secure backend proxy
+// Example: const firebaseConfig = window.ENV || { ... }
 const firebaseConfig = {
-  apiKey: "AIzaSyALr-6S8Pc1hnI0S6LOzP7NIGgid-mh8z8",
-  authDomain: "spendlyy-d0704.firebaseapp.com",
-  projectId: "spendlyy-d0704",
-  storageBucket: "spendlyy-d0704.firebasestorage.app",
-  messagingSenderId: "993534380659",
-  appId: "1:993534380659:web:ae86d32875e0bc1f67f806"
+  apiKey: import.meta.env?.VITE_FIREBASE_API_KEY || "AIzaSyALr-6S8Pc1hnI0S6LOzP7NIGgid-mh8z8",
+  authDomain: import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN || "spendlyy-d0704.firebaseapp.com",
+  projectId: import.meta.env?.VITE_FIREBASE_PROJECT_ID || "spendlyy-d0704",
+  storageBucket: import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET || "spendlyy-d0704.firebasestorage.app",
+  messagingSenderId: import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID || "993534380659",
+  appId: import.meta.env?.VITE_FIREBASE_APP_ID || "1:993534380659:web:ae86d32875e0bc1f67f806"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -26,8 +31,16 @@ const db = getFirestore(app);
 let currentUser = null;
 let unsubscribeSnapshot = null;
 
+// Log Firebase initialization for debugging
+console.log('🔥 Firebase initialized:', {
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain
+});
+
 /* ── AUTH STATE ── */
 onAuthStateChanged(auth, async (user) => {
+  console.log('🔐 Auth state changed:', user ? `User: ${user.email}` : 'No user');
+  
   if (user) {
     // Always reload to get fresh verification status from server
     await reload(user);
@@ -63,20 +76,25 @@ onAuthStateChanged(auth, async (user) => {
 
 /* ── REALTIME SYNC ── */
 function startRealtimeSync(uid) {
+  console.log('🔄 Starting realtime sync for user:', uid);
   if (unsubscribeSnapshot) unsubscribeSnapshot();
   const docRef = doc(db, 'users', uid);
   unsubscribeSnapshot = onSnapshot(docRef, (snap) => {
+    console.log('📦 Snapshot received:', snap.exists() ? 'Data found' : 'No data');
     if (snap.exists()) {
       state = { ...defaultState(), ...snap.data() };
+      console.log('💾 State loaded from Firestore:', Object.keys(state));
     } else {
       state = defaultState();
+      console.log('🆕 Creating new user document');
       saveToCloud();
     }
     document.documentElement.setAttribute('data-theme', state.theme || 'dark');
     document.getElementById('themeBtn').textContent = state.theme === 'light' ? '🌙' : '☀️';
     renderAll();
     document.getElementById('loadingOverlay').style.display = 'none';
-  }, () => {
+  }, (error) => {
+    console.error('❌ Sync error:', error);
     showToast('⚠️ Sync error — check connection');
     document.getElementById('loadingOverlay').style.display = 'none';
   });
@@ -84,9 +102,19 @@ function startRealtimeSync(uid) {
 }
 
 async function saveToCloud() {
-  if (!currentUser) return;
-  try { await setDoc(doc(db, 'users', currentUser.uid), state, { merge: true }); }
-  catch { showToast('⚠️ Could not save — check connection'); }
+  if (!currentUser) {
+    console.warn('⚠️ Cannot save: No user logged in');
+    return;
+  }
+  try { 
+    console.log('💾 Saving to Firestore...');
+    await setDoc(doc(db, 'users', currentUser.uid), state, { merge: true });
+    console.log('✅ Save successful');
+  }
+  catch (error) { 
+    console.error('❌ Save error:', error);
+    showToast('⚠️ Could not save — check connection'); 
+  }
 }
 window.saveData = saveToCloud;
 
@@ -98,10 +126,13 @@ window.doLogin = async function() {
   if (!email || !password) { showAuthError('Please fill in all fields'); return; }
   const btn = document.getElementById('loginBtn');
   btn.classList.add('loading');
+  console.log('🔑 Attempting login for:', email);
   try {
     const result = await signInWithEmailAndPassword(auth, email, password);
+    console.log('✅ Login successful:', result.user.email);
     btn.classList.remove('loading');
   } catch (e) {
+    console.error('❌ Login error:', e.code, e.message);
     btn.classList.remove('loading');
     const msgs = {
       'auth/user-not-found': 'No account found with this email',
@@ -126,12 +157,16 @@ window.doSignup = async function() {
   if (pwd !== pwd2) { showAuthError('Passwords do not match'); return; }
   const btn = document.getElementById('signupBtn');
   btn.classList.add('loading');
+  console.log('📝 Creating account for:', email);
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pwd);
+    console.log('✅ Account created:', cred.user.email);
     await updateProfile(cred.user, { displayName: name });
     await sendEmailVerification(cred.user);
+    console.log('📧 Verification email sent');
     btn.classList.remove('loading');
   } catch (e) {
+    console.error('❌ Signup error:', e.code, e.message);
     btn.classList.remove('loading');
     const msgs = {
       'auth/email-already-in-use': 'An account already exists with this email',
@@ -145,6 +180,7 @@ window.doSignup = async function() {
 /* ── LOGOUT ── */
 window.doLogout = async function() {
   if (!confirm('Sign out of Spendly?')) return;
+  console.log('👋 Logging out...');
   await saveToCloud();
   await signOut(auth);
   if (pieChart) { pieChart.destroy(); pieChart = null; }
@@ -158,6 +194,7 @@ window.resendVerification = async function() {
   if (!user) return;
   try {
     await sendEmailVerification(user);
+    console.log('📧 Verification email resent');
     showToast('📧 Verification email resent!');
   } catch { showToast('⚠️ Please wait a moment before resending'); }
 };
@@ -167,15 +204,18 @@ window.checkVerified = async function() {
   if (!user) return;
   const btn = document.getElementById('checkVerifiedBtn');
   btn.textContent = 'Checking...';
+  console.log('🔍 Checking verification status...');
   try {
     await reload(user);
     if (user.emailVerified) {
+      console.log('✅ Email verified!');
       window.location.reload();
     } else {
       btn.textContent = "I've Verified My Email";
       showToast('⚠️ Not verified yet — check your inbox and spam!');
     }
   } catch(e) {
+    console.error('❌ Verification check error:', e);
     btn.textContent = "I've Verified My Email";
     showToast('⚠️ Something went wrong, try again');
   }
@@ -193,6 +233,7 @@ window.doForgotPassword = async function() {
   if (!email) { showAuthError('Enter your email first, then click forgot password'); return; }
   try {
     await sendPasswordResetEmail(auth, email);
+    console.log('📧 Password reset email sent to:', email);
     showAuthSuccess('Password reset email sent! Check your inbox.');
   } catch { showAuthError('Could not send reset email. Check the email address.'); }
 };
@@ -204,8 +245,17 @@ window.doForgotPassword = async function() {
   --teal:#06d6a0;--red:#ef476f;--blue:#118ab2;--purple:#8b5cf6;
   --orange:#f77f00;--text:#eef0f8;--muted:#6b7280;--soft:#9ca3af;
   --radius:18px;--radius-sm:10px;
+  
+  /* Chart colors that adapt to theme */
+  --chart-food:#f0b429;--chart-transport:#118ab2;--chart-entertainment:#8b5cf6;
+  --chart-shopping:#e91e8c;--chart-health:#06d6a0;--chart-education:#00b4d8;
+  --chart-bills:#f77f00;--chart-travel:#ef476f;--chart-personal:#c77dff;
+  --chart-other:#6b7280;
 }
-[data-theme="light"]{--bg:#f0f2f9;--surface:#e5e8f2;--card:#ffffff;--card2:#f4f5fb;--border:rgba(0,0,0,0.08);--text:#16192b;--muted:#9ca3af;--soft:#6b7280;}
+[data-theme="light"]{
+  --bg:#f0f2f9;--surface:#e5e8f2;--card:#ffffff;--card2:#f4f5fb;
+  --border:rgba(0,0,0,0.08);--text:#16192b;--muted:#9ca3af;--soft:#6b7280;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html{scroll-behavior:smooth;}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;transition:background .3s,color .3s;}
@@ -297,12 +347,33 @@ header{display:flex;align-items:center;justify-content:space-between;padding:22p
 .streak-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.25);border-radius:50px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--gold);}
 .icon-btn{width:33px;height:33px;border-radius:50%;background:var(--card);border:1px solid var(--border);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
 .icon-btn:hover{border-color:rgba(240,180,41,.4);}
-.user-badge{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:50px;padding:5px 13px 5px 7px;cursor:pointer;transition:border-color .2s;position:relative;}
+
+/* IMPROVED USER DROPDOWN WITH PROPER HOVER */
+.user-badge{
+  display:flex;align-items:center;gap:7px;background:var(--card);
+  border:1px solid var(--border);border-radius:50px;padding:5px 13px 5px 7px;
+  cursor:pointer;transition:border-color .2s;position:relative;
+}
 .user-badge:hover{border-color:rgba(255,255,255,.14);}
 .user-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#f0b429,#ffd166);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0a0c12;}
 .user-name{font-size:12px;font-weight:600;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.user-dropdown{position:absolute;top:calc(100% + 8px);right:0;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:7px;min-width:180px;z-index:100;display:none;box-shadow:0 8px 32px rgba(0,0,0,.3);}
-.user-badge:hover .user-dropdown{display:block;}
+
+/* Improved dropdown with smooth transitions */
+.user-dropdown{
+  position:absolute;top:calc(100% + 8px);right:0;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:7px;min-width:180px;z-index:100;
+  box-shadow:0 8px 32px rgba(0,0,0,.3);
+  opacity:0;visibility:hidden;transform:translateY(-10px);
+  transition:opacity .2s ease, transform .2s ease, visibility .2s;
+  pointer-events:none;
+}
+
+.user-dropdown.show{
+  opacity:1;visibility:visible;transform:translateY(0);
+  pointer-events:all;
+}
+
 .user-email-item{padding:8px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dropdown-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;transition:background .2s;color:var(--text);}
 .dropdown-item:hover{background:rgba(255,255,255,.06);}
@@ -415,7 +486,7 @@ textarea{resize:none;height:52px;}
 .budget-item{background:var(--card2);border-radius:var(--radius-sm);padding:11px 12px;}
 .budget-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
 .budget-status{font-size:10px;font-weight:700;padding:2px 7px;border-radius:50px;}
-.budget-bar-wrap{background:rgba(255,255,255,.06);border-radius:50px;height:5px;overflow:hidden;margin-bottom:4px;}
+.budget-bar-wrap{background:rgba(255,255,255,0.06);border-radius:50px;height:5px;overflow:hidden;margin-bottom:4px;}
 .budget-bar{height:100%;border-radius:50px;transition:width .7s;}
 .budget-amounts{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);}
 .add-dashed-btn{border-radius:var(--radius-sm);padding:10px;text-align:center;cursor:pointer;font-size:12px;font-weight:500;transition:all .2s;margin-top:7px;border:1px dashed;}
@@ -646,16 +717,16 @@ textarea{resize:none;height:52px;}
     <div class="streak-badge">🔥 <span id="streakCount">0</span> day streak</div>
     <div class="header-date" id="headerDate"></div>
     <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">☀️</button>
-    <div class="user-badge">
+    <div class="user-badge" id="userBadge">
       <div class="user-avatar" id="userAvatar">?</div>
       <span class="user-name" id="userNameDisplay">User</span>
       <span style="font-size:10px;color:var(--muted);">▾</span>
-      <div class="user-dropdown">
+      <div class="user-dropdown" id="userDropdown">
         <div class="user-email-item" id="userEmailDisplay"></div>
-        <div class="dropdown-item" onclick="openIncomeModal()">💰 Manage Income</div>
-        <div class="dropdown-item" onclick="exportCSV()">⬇️ Export CSV</div>
-        <div class="dropdown-item" onclick="exportJSON()">💾 Backup Data</div>
-        <div class="dropdown-item" onclick="document.getElementById('importFile').click()">📂 Import Data</div>
+        <div class="dropdown-item" onclick="openIncomeModal();hideUserDropdown()">💰 Manage Income</div>
+        <div class="dropdown-item" onclick="exportCSV();hideUserDropdown()">⬇️ Export CSV</div>
+        <div class="dropdown-item" onclick="exportJSON();hideUserDropdown()">💾 Backup Data</div>
+        <div class="dropdown-item" onclick="document.getElementById('importFile').click();hideUserDropdown()">📂 Import Data</div>
         <div style="height:1px;background:var(--border);margin:4px 0;"></div>
         <div class="dropdown-item danger" onclick="doLogout()">🚪 Sign Out</div>
       </div>
@@ -809,11 +880,46 @@ let pieChart=null,weeklyChart=null;
 let lastDeleted=null,undoTimer=null;
 let saveDebounce=null;
 
+// User dropdown control
+let dropdownTimeout = null;
+
 function defaultState(){return{currency:'$',salary:0,incomes:[],expenses:[],goals:[],recurring:[],budgets:{},streak:0,lastLogDate:null,viewMonth:new Date().getMonth(),viewYear:new Date().getFullYear(),theme:'dark'};}
 function save(){clearTimeout(saveDebounce);saveDebounce=setTimeout(()=>{if(window.saveData)window.saveData();},800);}
 function today(){return new Date().toISOString().split('T')[0];}
 function fmt(n){return state.currency+parseFloat(n||0).toFixed(2);}
 function getTotalIncome(){if(state.incomes&&state.incomes.length>0){const m={monthly:1,biweekly:2.1667,weekly:4.3333,yearly:1/12};return state.incomes.reduce((s,i)=>s+i.amount*(m[i.frequency]||1),0);}return state.salary||0;}
+
+/* ═══════════════════════════════════════════════════════════
+   USER DROPDOWN CONTROLS - IMPROVED HOVER LOGIC
+═══════════════════════════════════════════════════════════ */
+function showUserDropdown() {
+  clearTimeout(dropdownTimeout);
+  document.getElementById('userDropdown').classList.add('show');
+}
+
+function hideUserDropdown() {
+  clearTimeout(dropdownTimeout);
+  dropdownTimeout = setTimeout(() => {
+    document.getElementById('userDropdown').classList.remove('show');
+  }, 200); // 200ms delay before hiding
+}
+
+function keepDropdownOpen() {
+  clearTimeout(dropdownTimeout);
+}
+
+// Initialize dropdown hover events
+document.addEventListener('DOMContentLoaded', () => {
+  const badge = document.getElementById('userBadge');
+  const dropdown = document.getElementById('userDropdown');
+  
+  if (badge && dropdown) {
+    badge.addEventListener('mouseenter', showUserDropdown);
+    badge.addEventListener('mouseleave', hideUserDropdown);
+    dropdown.addEventListener('mouseenter', keepDropdownOpen);
+    dropdown.addEventListener('mouseleave', hideUserDropdown);
+  }
+});
 
 /* AUTH HELPERS */
 function switchTab(tab){document.getElementById('loginForm').style.display=tab==='login'?'block':'none';document.getElementById('signupForm').style.display=tab==='signup'?'block':'none';document.getElementById('loginTab').classList.toggle('active',tab==='login');document.getElementById('signupTab').classList.toggle('active',tab==='signup');clearAuthMsg();}
@@ -826,8 +932,44 @@ function checkPwdStrength(pwd){document.getElementById('pwdStrength').classList.
 /* PARTICLES */
 (function(){const bg=document.getElementById('authBg');for(let i=0;i<15;i++){const p=document.createElement('div');p.className='particle';p.style.left=Math.random()*100+'vw';p.style.animationDuration=(8+Math.random()*12)+'s';p.style.animationDelay=Math.random()*10+'s';p.style.opacity=0.2+Math.random()*0.4;bg.appendChild(p);}})();
 
-/* THEME */
-function toggleTheme(){state.theme=state.theme==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',state.theme);document.getElementById('themeBtn').textContent=state.theme==='light'?'🌙':'☀️';save();renderPie(filteredExpenses());renderWeeklyChart(filteredExpenses());}
+/* ═══════════════════════════════════════════════════════════
+   THEME - IMPROVED TO NOT DESTROY CHARTS
+═══════════════════════════════════════════════════════════ */
+function toggleTheme(){
+  state.theme=state.theme==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',state.theme);
+  document.getElementById('themeBtn').textContent=state.theme==='light'?'🌙':'☀️';
+  save();
+  
+  // Update chart colors without destroying them
+  updateChartTheme();
+}
+
+function updateChartTheme() {
+  const isDark = state.theme !== 'light';
+  const bgColor = isDark ? '#181c2a' : '#ffffff';
+  const textColor = isDark ? '#9ca3af' : '#6b7280';
+  
+  // Update pie chart if it exists
+  if (pieChart) {
+    pieChart.data.datasets[0].borderColor = bgColor;
+    pieChart.options.plugins.tooltip.backgroundColor = isDark ? '#1e2235' : '#fff';
+    pieChart.options.plugins.tooltip.titleColor = isDark ? '#eef0f8' : '#16192b';
+    pieChart.options.plugins.tooltip.bodyColor = textColor;
+    pieChart.update('none'); // Update without animation
+  }
+  
+  // Update weekly chart if it exists
+  if (weeklyChart) {
+    weeklyChart.options.plugins.legend.labels.color = textColor;
+    weeklyChart.options.plugins.tooltip.backgroundColor = isDark ? '#1e2235' : '#fff';
+    weeklyChart.options.scales.x.grid.color = 'rgba(255,255,255,0.04)';
+    weeklyChart.options.scales.x.ticks.color = textColor;
+    weeklyChart.options.scales.y.grid.color = 'rgba(255,255,255,0.04)';
+    weeklyChart.options.scales.y.ticks.color = textColor;
+    weeklyChart.update('none'); // Update without animation
+  }
+}
 
 /* MONTH NAV */
 function updateMonthLabel(){const d=new Date(state.viewYear,state.viewMonth,1);document.getElementById('monthLabel').textContent=d.toLocaleDateString('en-US',{month:'long',year:'numeric'});}
