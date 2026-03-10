@@ -29,7 +29,7 @@ let unsubscribeSnapshot = null;
 /* ── AUTH STATE ── */
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    // Reload to get fresh verification status
+    // Always reload to get fresh verification status from server
     await reload(user);
     if (!user.emailVerified) {
       currentUser = null;
@@ -39,7 +39,7 @@ onAuthStateChanged(auth, async (user) => {
       document.getElementById('verifyEmail').textContent = user.email;
       return;
     }
-    // Verified
+    // Verified — enter app
     currentUser = user;
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('verifyScreen').style.display = 'none';
@@ -99,7 +99,8 @@ window.doLogin = async function() {
   const btn = document.getElementById('loginBtn');
   btn.classList.add('loading');
   try {
-    await signInWithEmailAndPassword(auth, email, password);
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    btn.classList.remove('loading');
   } catch (e) {
     btn.classList.remove('loading');
     const msgs = {
@@ -160,7 +161,6 @@ window.resendVerification = async function() {
     showToast('📧 Verification email resent!');
   } catch { showToast('⚠️ Please wait a moment before resending'); }
 };
-
 /* ── CHECK VERIFIED (user clicks after verifying) ── */
 window.checkVerified = async function() {
   const user = auth.currentUser;
@@ -173,12 +173,14 @@ window.checkVerified = async function() {
       window.location.reload();
     } else {
       btn.textContent = "I've Verified My Email";
-      showToast('⚠️ Not verified yet — check inbox!');
+      showToast('⚠️ Not verified yet — check your inbox and spam!');
     }
   } catch(e) {
     btn.textContent = "I've Verified My Email";
+    showToast('⚠️ Something went wrong, try again');
   }
 };
+
 /* ── SIGN OUT FROM VERIFY SCREEN ── */
 window.signOutFromVerify = async function() {
   await signOut(auth);
